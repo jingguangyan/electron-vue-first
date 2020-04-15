@@ -1,23 +1,48 @@
-'use strict'
 import { app, protocol, BrowserWindow, Menu, globalShortcut } from 'electron'
 import {
   createProtocol
   /* installVueDevtools */
 } from 'vue-cli-plugin-electron-builder/lib'
-
 const path = require('path')
-const isDevelopment = process.env.NODE_ENV !== 'production'
+
+// 单例应用程序
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  // return false
+}
+app.on('second-instance', (event, argv, cwd) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  } else {
+    app.quit()
+  }
+})
+
+const isDev = global.isDev = process.env.NODE_ENV !== 'production'
+
+const autoUpdate = require('./libs/autoUpdate')
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
-let win
+let mainWindow
+let winURL
+
+if (isDev) {
+  // eslint-disable-next-line no-undef
+  global.__static = path.join(__dirname, '/static')
+  winURL = 'http://localhost:8080'
+} else {
+  global.__static = path.join(__dirname, '/static')
+  winURL = 'app://./index.html'
+}
 
 // Scheme must be registered before the app is ready
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { secure: true, standard: true } }])
 
 function createWindow () {
   // Create the browser window.
-  win = new BrowserWindow({
+  mainWindow = global.mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
@@ -25,23 +50,18 @@ function createWindow () {
       nodeIntegration: true
     },
     // eslint-disable-next-line no-undef
-    icon: path.join(__static, 'app.ico')
+    icon: path.join(global.__static, 'app.ico')
   })
-
-  if (process.env.WEBPACK_DEV_SERVER_URL) {
-    // Load the url of the dev server if in development mode
-    win.loadURL(process.env.WEBPACK_DEV_SERVER_URL)
-    if (!process.env.IS_TEST) win.webContents.openDevTools()
-  } else {
+  if (!isDev) {
     createProtocol('app')
-    // Load the index.html when not in development
-    win.loadURL('app://./index.html')
   }
+  mainWindow.loadURL(winURL)
 
-  win.on('closed', () => {
-    win = null
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
   createMenu()
+  if (!isDev) autoUpdate()
 }
 
 /**
@@ -85,7 +105,7 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   // On macOS it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
-  if (win === null) {
+  if (mainWindow === null) {
     createWindow()
   }
 })
@@ -94,7 +114,7 @@ app.on('activate', () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', async () => {
-  if (isDevelopment && !process.env.IS_TEST) {
+  if (isDev && !process.env.IS_TEST) {
     // Install Vue Devtools
     // Devtools extensions are broken in Electron 6.0.0 and greater
     // See https://github.com/nklayman/vue-cli-plugin-electron-builder/issues/378 for more info
@@ -110,13 +130,13 @@ app.on('ready', async () => {
   }
   // 在开发环境和生产环境均可通过快捷键打开devTools
   globalShortcut.register('CommandOrControl+Shift+i', function () {
-    win.webContents.openDevTools()
+    mainWindow.webContents.openDevTools()
   })
   createWindow()
 })
 
 // Exit cleanly on request from parent process in development mode.
-if (isDevelopment) {
+if (isDev) {
   if (process.platform === 'win32') {
     process.on('message', data => {
       if (data === 'graceful-exit') {
